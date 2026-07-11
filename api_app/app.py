@@ -99,11 +99,44 @@ async def root():
     replicaset_name = topology_description.replica_set_name
 
     shards = None
+    shards_detail = None
     if topology_type == "Sharded":
         shards_list = await client.admin.command("listShards")
         shards = {}
+        shards_detail = {}
         for shard in shards_list.get("shards", {}):
             shards[shard["_id"]] = shard["host"]
+
+            try:
+                shard_stats = {}
+                for collection_name in collection_names:
+                    collection = db.get_collection(collection_name)
+                    
+                    pipeline = [
+                        {"$collStats": {"storageStats": {}}}
+                    ]
+                    try:
+                        stats = await collection.aggregate(pipeline).to_list(length=1)
+                        if stats and len(stats) > 0:
+                            shard_stats[collection_name] = {
+                                "count": stats[0].get("storageStats", {}).get("count", 0),
+                                "size": stats[0].get("storageStats", {}).get("size", 0)
+                            }
+                    except:
+                        shard_stats[collection_name] = {
+                            "count": await collection.count_documents({}),
+                            "note": "total count from this shard perspective"
+                        }
+                
+                shards_detail[shard["_id"]] = {
+                    "host": shard["host"],
+                    "collections": shard_stats
+                }
+            except Exception as e:
+                shards_detail[shard["_id"]] = {
+                    "host": shard["host"],
+                    "error": str(e)
+                }
 
     cache_enabled = False
     if REDIS_URL:
@@ -121,6 +154,7 @@ async def root():
         "mongo_is_mongos": client.is_mongos,
         "collections": collections,
         "shards": shards,
+        "shards_detail": shards_detail,
         "cache_enabled": cache_enabled,
         "status": "OK",
     }
