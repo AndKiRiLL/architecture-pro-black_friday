@@ -14,7 +14,7 @@ docker compose up -d
 
 ```shell
 cd .\api_app\
-python test_sharding.py
+python add_data_db.py
 ```
 
 ## Как проверить
