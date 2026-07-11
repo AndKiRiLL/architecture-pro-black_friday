@@ -99,93 +99,11 @@ async def root():
     replicaset_name = topology_description.replica_set_name
 
     shards = None
-    shards_detail = None
     if topology_type == "Sharded":
         shards_list = await client.admin.command("listShards")
         shards = {}
-        shards_detail = {}
         for shard in shards_list.get("shards", {}):
-            shard_id = shard["_id"]
-            shard_host = shard["host"]
-            shards[shard_id] = shard_host
-            
-            # Получаем информацию о репликах шарда
-            shard_info = {
-                "host": shard_host,
-                "state": shard.get("state", "unknown"),
-                "replicas": None
-            }
-            
-            # Парсим хост для получения информации о репликах
-            # shard_host выглядит как "shard1/shard1-primary:27018,shard1-secondary1:27018,shard1-secondary2:27018"
-            try:
-                if "/" in shard_host:
-                    replicaset_name, hosts_string = shard_host.split("/", 1)
-                    replica_hosts = hosts_string.split(",")
-                    
-                    replicas_info = []
-                    for host in replica_hosts:
-                        replicas_info.append({
-                            "host": host.strip(),
-                            "role": "unknown"  # Будет обновлено ниже
-                        })
-                    
-                    shard_info["replicaset_name"] = replicaset_name
-                    shard_info["replicas"] = replicas_info
-                    
-                    # Пытаемся подключиться к PRIMARY шарда для получения детальной информации
-                    try:
-                        # Берем первый хост (обычно PRIMARY)
-                        primary_host = replica_hosts[0].strip()
-                        shard_client = motor.motor_asyncio.AsyncIOMotorClient(f"mongodb://{primary_host}")
-                        
-                        # Получаем статус репликации
-                        try:
-                            repl_status = await shard_client.admin.command("replSetGetStatus")
-                            
-                            # Обновляем информацию о репликах
-                            updated_replicas = []
-                            for member in repl_status.get("members", []):
-                                updated_replicas.append({
-                                    "host": member.get("name", "unknown"),
-                                    "role": member.get("stateStr", "unknown"),
-                                    "health": member.get("health", 0),
-                                    "uptime_seconds": member.get("uptime", 0),
-                                    "is_primary": member.get("stateStr") == "PRIMARY"
-                                })
-                            
-                            shard_info["replicas"] = updated_replicas
-                            shard_info["primary"] = repl_status.get("primary", "unknown")
-                            
-                        except Exception as e:
-                            shard_info["replicas_status"] = f"Could not get replica status: {str(e)}"
-                        
-                        # Получаем количество документов на этом шарде
-                        shard_db = shard_client[DATABASE_NAME]
-                        shard_collections = {}
-                        total_docs = 0
-                        
-                        for collection_name in collection_names:
-                            try:
-                                shard_collection = shard_db.get_collection(collection_name)
-                                count = await shard_collection.count_documents({})
-                                shard_collections[collection_name] = count
-                                total_docs += count
-                            except:
-                                shard_collections[collection_name] = "error"
-                        
-                        shard_info["collections"] = shard_collections
-                        shard_info["total_documents"] = total_docs
-                        
-                        shard_client.close()
-                        
-                    except Exception as e:
-                        shard_info["connection_error"] = f"Could not connect to shard: {str(e)}"
-                
-            except Exception as e:
-                shard_info["parse_error"] = str(e)
-            
-            shards_detail[shard_id] = shard_info
+            shards[shard["_id"]] = shard["host"]
 
     cache_enabled = False
     if REDIS_URL:
@@ -203,7 +121,6 @@ async def root():
         "mongo_is_mongos": client.is_mongos,
         "collections": collections,
         "shards": shards,
-        "shards_detail": shards_detail,
         "cache_enabled": cache_enabled,
         "status": "OK",
     }

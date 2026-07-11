@@ -1,4 +1,4 @@
-name: mongo-sharding
+name: mongo-sharding-repl
 
 services:
   # Сервер конфигурации
@@ -27,18 +27,19 @@ services:
       interval: 5s
       start_period: 10s
 
-  # Шард 1
-  shard1:
+  # ========== SHARD 1 (3 узла) ==========
+  # Shard 1 - Primary
+  shard1-primary:
     image: dh-mirror.gitverse.ru/mongo:latest
-    container_name: shard1
+    container_name: shard1-primary
     restart: always
     ports:
       - "27018:27018"
     networks:
       app-network:
-        ipv4_address: 173.17.0.9
+        ipv4_address: 173.17.0.21
     volumes:
-      - shard1-data:/data/db
+      - shard1-primary-data:/data/db
     command:
       [
         "--shardsvr",
@@ -53,18 +54,123 @@ services:
       interval: 5s
       start_period: 10s
 
-  # Шард 2
-  shard2:
+  # Shard 1 - Secondary 1
+  shard1-secondary1:
     image: dh-mirror.gitverse.ru/mongo:latest
-    container_name: shard2
+    container_name: shard1-secondary1
+    restart: always
+    ports:
+      - "27021:27018"
+    networks:
+      app-network:
+        ipv4_address: 173.17.0.22
+    volumes:
+      - shard1-secondary1-data:/data/db
+    command:
+      [
+        "--shardsvr",
+        "--replSet",
+        "shard1",
+        "--bind_ip_all",
+        "--port",
+        "27018"
+      ]
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      start_period: 10s
+
+  # Shard 1 - Secondary 2
+  shard1-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-secondary2
+    restart: always
+    ports:
+      - "27022:27018"
+    networks:
+      app-network:
+        ipv4_address: 173.17.0.23
+    volumes:
+      - shard1-secondary2-data:/data/db
+    command:
+      [
+        "--shardsvr",
+        "--replSet",
+        "shard1",
+        "--bind_ip_all",
+        "--port",
+        "27018"
+      ]
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      start_period: 10s
+
+   # ========== SHARD 2 (3 узла) ==========
+  # Shard 2 - Primary
+  shard2-primary:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-primary
     restart: always
     ports:
       - "27019:27019"
     networks:
       app-network:
-        ipv4_address: 173.17.0.8
+        ipv4_address: 173.17.0.31
     volumes:
-      - shard2-data:/data/db
+      - shard2-primary-data:/data/db
+    command:
+      [
+        "--shardsvr",
+        "--replSet",
+        "shard2",
+        "--bind_ip_all",
+        "--port",
+        "27019"
+      ]
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      start_period: 10s
+
+  # Shard 2 - Secondary 1
+  shard2-secondary1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary1
+    restart: always
+    ports:
+      - "27023:27019"
+    networks:
+      app-network:
+        ipv4_address: 173.17.0.32
+    volumes:
+      - shard2-secondary1-data:/data/db
+    command:
+      [
+        "--shardsvr",
+        "--replSet",
+        "shard2",
+        "--bind_ip_all",
+        "--port",
+        "27019"
+      ]
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      start_period: 10s
+
+  # Shard 2 - Secondary 2
+  shard2-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary2
+    restart: always
+    ports:
+      - "27024:27019"
+    networks:
+      app-network:
+        ipv4_address: 173.17.0.33
+    volumes:
+      - shard2-secondary2-data:/data/db
     command:
       [
         "--shardsvr",
@@ -112,8 +218,12 @@ services:
     container_name: sharding-init
     depends_on:
       - configSrv
-      - shard1
-      - shard2
+      - shard1-primary
+      - shard1-secondary1
+      - shard1-secondary2
+      - shard2-primary
+      - shard2-secondary1
+      - shard2-secondary2
       - mongos_router
     networks:
       - app-network
@@ -122,7 +232,7 @@ services:
     entrypoint: ["/bin/bash", "/init-scripts/init-sharding.sh"]
     restart: "no"
 
-  # Ваше API приложение
+  # API приложение
   pymongo_api:
     container_name: pymongo_api
     build: 
@@ -150,5 +260,9 @@ networks:
 
 volumes:
   config-data:
-  shard1-data:
-  shard2-data:
+  shard1-primary-data:
+  shard1-secondary1-data:
+  shard1-secondary2-data:
+  shard2-primary-data:
+  shard2-secondary1-data:
+  shard2-secondary2-data:
