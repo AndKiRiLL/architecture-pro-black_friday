@@ -1,3 +1,5 @@
+name: mongo-sharding
+
 services:
   # Сервер конфигурации
   configSrv:
